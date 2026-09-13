@@ -3,6 +3,7 @@ package com.example.timestampcamera
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.camera.core.AspectRatio
@@ -48,7 +49,10 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.seconds
 
@@ -59,6 +63,20 @@ enum class RatioMode(val camXValue: Int, val label: String) {
 }
 
 enum class CaptureMode { PHOTO, VIDEO }
+
+/**
+ * Pilihan resolusi/kualitas video yang bisa dipilih user. Urutan dipakai untuk
+ * tombol siklus (tap berulang -> lanjut ke opsi berikutnya, kembali ke awal
+ * kalau sudah di ujung).
+ */
+enum class VideoResolution(
+    val quality: androidx.camera.video.Quality,
+    val label: String
+) {
+    SD(androidx.camera.video.Quality.SD, "SD"),
+    HD(androidx.camera.video.Quality.HD, "HD"),
+    FHD(androidx.camera.video.Quality.FHD, "FHD")
+}
 
 /**
  * Ambil rotasi display saat ini TANPA bergantung pada apakah suatu View sudah
@@ -86,6 +104,7 @@ fun CameraScreen(
 
     val context = LocalContext.current
     val lifecycleOwner = context as ComponentActivity
+    val coroutineScope = rememberCoroutineScope()
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
@@ -112,6 +131,10 @@ fun CameraScreen(
     var ratioMode by remember { mutableStateOf(RatioMode.RATIO_4_3) }
 
     var captureMode by remember { mutableStateOf(CaptureMode.PHOTO) }
+
+    // Resolusi/kualitas video yang sedang aktif (default FHD)
+    var videoResolution by remember { mutableStateOf(VideoResolution.FHD) }
+
     var isRecording by remember { mutableStateOf(false) }
     var recordingElapsedSeconds by remember { mutableStateOf(0) }
     var activeRecording by remember { mutableStateOf<androidx.camera.video.Recording?>(null) }
@@ -256,8 +279,9 @@ fun CameraScreen(
         onDispose { orientationListener.disable() }
     }
 
-    // Bind/rebind kamera setiap kali lensFacing atau ratioMode berubah, atau provider siap
-    LaunchedEffect(cameraProvider, previewView, lensFacing, ratioMode, captureMode) {
+    // Bind/rebind kamera setiap kali lensFacing, ratioMode, captureMode, atau
+    // videoResolution berubah, atau provider siap
+    LaunchedEffect(cameraProvider, previewView, lensFacing, ratioMode, captureMode, videoResolution) {
         val provider = cameraProvider ?: return@LaunchedEffect
         val pv = previewView ?: return@LaunchedEffect
 
@@ -286,11 +310,14 @@ fun CameraScreen(
                     // menghasilkan crop ganda alih-alih benar-benar ganti rasio --
                     // makanya tombol rasio kelihatan tidak berfungsi untuk video.
                     .setAspectRatio(ratioMode.camXValue)
+                    // Kualitas dipilih dari tombol resolusi (SD/HD/FHD). Fallback ke
+                    // kualitas lebih rendah kalau device tidak mendukung kualitas yang
+                    // dipilih, supaya tidak gagal bind di device low-end.
                     .setQualitySelector(
                         androidx.camera.video.QualitySelector.from(
-                            androidx.camera.video.Quality.FHD,
-                            androidx.camera.video.FallbackStrategy.higherQualityOrLowerThan(
-                                androidx.camera.video.Quality.SD
+                            videoResolution.quality,
+                            androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(
+                                videoResolution.quality
                             )
                         )
                     ).build()
@@ -458,11 +485,12 @@ fun CameraScreen(
                 )
         )
 
-        // Tombol flash, tombol rasio & tombol mode disusun vertikal di pojok kanan atas.
-        // Ganti rasio/mode DIKUNCI (tidak boleh) selama sedang merekam video --
-        // karena itu akan memicu provider.unbindAll() di tengah Recording aktif
-        // (lihat LaunchedEffect binding kamera di atas), yang bisa membuat file
-        // video corrupt atau melempar exception.
+        // Tombol flash, tombol rasio, tombol mode, dan (khusus mode video) tombol
+        // resolusi disusun vertikal di pojok kanan atas. Ganti rasio/mode/resolusi
+        // DIKUNCI (tidak boleh) selama sedang merekam video -- karena itu akan
+        // memicu provider.unbindAll() di tengah Recording aktif (lihat
+        // LaunchedEffect binding kamera di atas), yang bisa membuat file video
+        // corrupt atau melempar exception.
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -504,6 +532,22 @@ fun CameraScreen(
                     }
                 }
             )
+
+            // Tombol resolusi video hanya muncul saat mode video aktif.
+            if (captureMode == CaptureMode.VIDEO) {
+                VideoResolutionButton(
+                    videoResolution = videoResolution,
+                    onToggle = {
+                        if (!isRecording) {
+                            videoResolution = when (videoResolution) {
+                                VideoResolution.SD -> VideoResolution.HD
+                                VideoResolution.HD -> VideoResolution.FHD
+                                VideoResolution.FHD -> VideoResolution.SD
+                            }
+                        }
+                    }
+                )
+            }
         }
 
         ZoomPresetControls(
@@ -577,7 +621,26 @@ fun CameraScreen(
                                 hasAudioPermission = hasAudioPermission
                             ) { uri ->
                                 isRecording = false
-                                if (uri != null) lastPhotoUri = uri // thumbnail galeri video bisa nyusul
+                                if (uri != null) {
+                                    lastPhotoUri = uri
+                                    // Ambil frame pertama video sebagai thumbnail preview,
+                                    // dikerjakan di IO dispatcher supaya tidak nge-block UI.
+                                    coroutineScope.launch {
+                                        val frame = withContext(Dispatchers.IO) {
+                                            extractVideoThumbnail(context, uri)
+                                        }
+                                        if (frame != null) {
+                                            val previewWidth = 200
+                                            val previewHeight = (previewWidth.toFloat() * frame.height / frame.width)
+                                                .toInt()
+                                                .coerceAtLeast(1)
+                                            val scaled = Bitmap.createScaledBitmap(
+                                                frame, previewWidth, previewHeight, true
+                                            )
+                                            thumbnailBitmap = scaled.asImageBitmap()
+                                        }
+                                    }
+                                }
                             }
                             isRecording = true
                         } else {
@@ -654,6 +717,54 @@ fun ModeButton(
                     "Ganti ke mode foto",
                 tint = Color.White
             )
+        }
+    }
+}
+
+/** Tombol siklus untuk memilih resolusi/kualitas video: SD -> HD -> FHD -> SD -> ... */
+@Composable
+fun VideoResolutionButton(
+    videoResolution: VideoResolution,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(48.dp)
+            .clickable { onToggle() },
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.4f)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = videoResolution.label,
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/**
+ * Ambil satu frame dari video (frame pertama yang bisa di-decode) untuk dipakai
+ * sebagai thumbnail preview, mirip seperti bitmap hasil foto. Wajib dipanggil
+ * dari background thread (IO dispatcher) -- MediaMetadataRetriever melakukan
+ * decode yang cukup berat untuk main thread.
+ */
+private fun extractVideoThumbnail(context: android.content.Context, uri: Uri): Bitmap? {
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(context, uri)
+        retriever.frameAtTime
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    } finally {
+        try {
+            retriever.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

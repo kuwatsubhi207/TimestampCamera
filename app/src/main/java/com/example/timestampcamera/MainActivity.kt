@@ -1,9 +1,16 @@
 package com.example.timestampcamera
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,16 +44,41 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.android.gms.auth.api.identity.Identity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
+    // ---- Update APK: id download yang sedang berjalan, dicocokkan di receiver ----
+    private var updateDownloadId: Long = -1L
+
+    private val onUpdateDownloadComplete = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id == updateDownloadId) {
+                installDownloadedApk(id)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ---- Daftarkan receiver untuk notifikasi download APK update selesai ----
+        val updateFilter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(onUpdateDownloadComplete, updateFilter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(onUpdateDownloadComplete, updateFilter)
+        }
 
         // ==================================================================
         // TESTING: pakai scheduleOneTimeForTesting supaya hasil hapus foto
@@ -141,6 +173,18 @@ class MainActivity : ComponentActivity() {
                             it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
                         }
                     }
+            }
+
+            // ---- Cek update aplikasi dari GitHub Releases ----
+            var updateInfo by remember { mutableStateOf<LatestRelease?>(null) }
+            LaunchedEffect(Unit) {
+                val currentVersion = packageManager
+                    .getPackageInfo(packageName, 0)
+                    .versionName ?: "0"
+                val release = withContext(Dispatchers.IO) {
+                    UpdateChecker.checkForUpdate(currentVersion)
+                }
+                updateInfo = release
             }
 
             // Launcher untuk consent screen izin Drive (dipanggil kalau authorizeDrive()
@@ -343,6 +387,33 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 }
+
+                                // ---- Dialog update aplikasi (kalau ada versi baru) ----
+                                updateInfo?.let { release ->
+                                    AlertDialog(
+                                        onDismissRequest = { /* wajib pilih salah satu tombol */ },
+                                        title = { Text("Update tersedia: v${release.versionName}") },
+                                        text = {
+                                            Text(
+                                                if (release.notes.isNotBlank()) release.notes
+                                                else "Versi baru sudah tersedia. Update sekarang?"
+                                            )
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = {
+                                                startApkDownload(release)
+                                                updateInfo = null
+                                            }) {
+                                                Text("Update")
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { updateInfo = null }) {
+                                                Text("Nanti")
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -386,6 +457,58 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(onUpdateDownloadComplete)
+    }
+
+    /** Download APK update lewat DownloadManager (support file besar, ada notif progres). */
+    private fun startApkDownload(release: LatestRelease) {
+        val fileName = "TimestampCamera-${release.versionName}.apk"
+        val request = DownloadManager.Request(Uri.parse(release.downloadUrl))
+            .setTitle("Mengunduh update")
+            .setDescription("TimestampCamera v${release.versionName}")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(
+                this,
+                Environment.DIRECTORY_DOWNLOADS,
+                fileName
+            )
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+
+        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        updateDownloadId = downloadManager.enqueue(request)
+    }
+
+    /** Buka installer APK setelah download update selesai. */
+    private fun installDownloadedApk(downloadId: Long) {
+        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        val cursor = downloadManager.query(query)
+        if (cursor.moveToFirst()) {
+            val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+            val localUriString = cursor.getString(localUriIndex)
+            cursor.close()
+
+            val file = File(Uri.parse(localUriString).path ?: return)
+            val apkUri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(installIntent)
+        } else {
+            cursor.close()
         }
     }
 
