@@ -74,7 +74,12 @@ class MainActivity : ComponentActivity() {
         // ---- Daftarkan receiver untuk notifikasi download APK update selesai ----
         val updateFilter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(onUpdateDownloadComplete, updateFilter, RECEIVER_NOT_EXPORTED)
+            // WAJIB pakai RECEIVER_EXPORTED, BUKAN RECEIVER_NOT_EXPORTED -- broadcast
+            // ACTION_DOWNLOAD_COMPLETE dikirim oleh SISTEM (DownloadManager), bukan
+            // dari app ini sendiri. Dengan NOT_EXPORTED, broadcast dari sistem tidak
+            // pernah sampai ke receiver ini, jadi download sukses tapi instalasi APK
+            // tidak pernah otomatis terbuka.
+            registerReceiver(onUpdateDownloadComplete, updateFilter, RECEIVER_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(onUpdateDownloadComplete, updateFilter)

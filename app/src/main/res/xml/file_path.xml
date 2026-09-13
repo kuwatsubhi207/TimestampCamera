@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-cache-path name="apk_updates" path="." />
+    <!-- Cocok dengan setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, ...)
+         di startApkDownload() - yaitu Android/data/<package>/files/Download/ -->
+    <external-files-path name="apk_updates" path="Download/" />
 </paths>
