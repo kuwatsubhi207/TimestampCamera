@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -69,12 +70,20 @@ fun ViewResultButton(
         if (thumbnailBitmap != null) {
             Image(
                 bitmap = thumbnailBitmap,
-                contentDescription = "Foto terakhir",
+                contentDescription = "Foto/video terakhir",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            Text("🖼️", fontSize = 20.sp, textAlign = TextAlign.Center)
+            // Belum ada foto/video sama sekali (mis. baru pertama kali buka app) --
+            // tampilkan ikon galeri generik, bukan emoji, supaya konsisten dengan
+            // gaya ikon Material lain di app (Cameraswitch, dll).
+            Icon(
+                imageVector = Icons.Filled.Image,
+                contentDescription = "Belum ada foto/video",
+                tint = ComposeColor.White.copy(alpha = 0.6f),
+                modifier = Modifier.size(28.dp)
+            )
         }
     }
 }
