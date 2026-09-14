@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TimestampCamera</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --card: #171a21;
+        --text: #e8eaf0;
+        --muted: #9aa3b2;
+        --accent: #4f8cff;
+        --border: #242836;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+      }
+      header {
+        padding: 64px 20px 40px;
+        text-align: center;
+      }
+      header h1 {
+        margin: 0 0 10px;
+        font-size: 2.4rem;
+      }
+      header p {
+        color: var(--muted);
+        margin: 0 0 24px;
+        font-size: 1.05rem;
+      }
+      .badge {
+        display: inline-block;
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.85rem;
+        padding: 6px 14px;
+        border-radius: 999px;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 0 20px 80px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px 28px;
+        margin-bottom: 20px;
+      }
+      h2 {
+        font-size: 1.15rem;
+        margin-top: 0;
+        color: var(--accent);
+      }
+      ul {
+        padding-left: 20px;
+        margin: 8px 0;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .links {
+        display: flex;
+        gap: 14px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-secondary {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      footer {
+        text-align: center;
+        padding: 24px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>TimestampCamera</h1>
+      <p>
+        Capture photos &amp; videos with date, time, and location stamped in
+        automatically.
+      </p>
+      <span class="badge">Android</span>
+      <div class="links">
+        <a
+          class="btn btn-primary"
+          href="#"
+          title="Replace with your Play Store listing link once published"
+          >Get it on Google Play</a
+        >
+        <a class="btn btn-secondary" href="privacy.html">Privacy Policy</a>
+      </div>
+    </header>
+
+    <main>
+      <div class="card">
+        <h2>About the App</h2>
+        <p>
+          TimestampCamera lets you capture photos and videos with the date,
+          time, and location stamped directly onto the media — useful for
+          documentation, fieldwork, inspections, or any situation where proof of
+          when and where a photo was taken matters.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Features</h2>
+        <ul>
+          <li>Timestamp and location overlay on photos and videos</li>
+          <li>Local gallery of your captures</li>
+          <li>
+            Optional backup of your photos/videos to your own Google Drive
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Permissions Used</h2>
+        <ul>
+          <li><strong>Camera</strong> — to take photos and record video</li>
+          <li>
+            <strong>Location</strong> — to stamp coordinates onto your media
+          </li>
+          <li><strong>Microphone</strong> — to record audio in videos</li>
+          <li>
+            <strong>Internet</strong> — to upload backups to your own Google
+            Drive (optional)
+          </li>
+        </ul>
+        <p>
+          See the full <a href="privacy.html">Privacy Policy</a> for details on
+          how each permission is used.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Support</h2>
+        <p>
+          Questions, feedback, or issues? Contact
+          <a href="mailto:kuwatsubhi207@gmail.com">kuwatsubhi207@gmail.com</a>.
+        </p>
+      </div>
+    </main>
+
+    <footer>&copy; 2026 Kuwat Subhi &middot; TimestampCamera</footer>
+  </body>
+</html>
