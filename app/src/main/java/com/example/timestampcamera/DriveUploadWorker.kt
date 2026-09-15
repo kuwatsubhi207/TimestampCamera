@@ -23,6 +23,17 @@ import java.util.concurrent.TimeUnit
 import java.io.File as JavaFile
 
 /**
+ * Dilempar saat Drive API menolak request dengan HTTP 401/403 -- artinya token
+ * sudah tidak valid ATAU izin drive.file sudah di-revoke user (mis. lewat Google
+ * Account permissions, atau lewat DriveAuth.signOut() yang sekarang memanggil
+ * revokeDriveAccess()). Kondisi ini TIDAK akan sembuh sendiri dengan retry:
+ * WorkManager retry dengan backoff hanya cocok untuk error transient (network
+ * flaky, Drive lagi 5xx), bukan untuk "izin memang sudah dicabut".
+ */
+private class DriveAuthRevokedException(val httpCode: Int) :
+    IOException("Drive access ditolak (HTTP $httpCode) -- token/izin tidak valid lagi")
+
+/**
  * Daftar URI foto yang SUDAH diantre untuk diupload tapi BELUM berhasil, karena saat
  * worker jalan tidak ada akses Drive yang valid (mis. user sedang sign-out).
  *
@@ -100,9 +111,16 @@ class DriveUploadWorker(
 
             PendingUploads.remove(applicationContext, uri)
             Result.success()
+        } catch (e: DriveAuthRevokedException) {
+            // Izin sudah dicabut -- retry TIDAK akan pernah berhasil sampai user
+            // authorize ulang secara manual (butuh UI, tidak bisa dari background).
+            // uri tetap ada di PendingUploads supaya bisa di-retry lewat
+            // retryPendingUploads() begitu user connect Drive lagi.
+            e.printStackTrace()
+            Result.failure()
         } catch (e: Exception) {
             e.printStackTrace()
-            Result.retry() // WorkManager coba lagi otomatis dengan exponential backoff
+            Result.retry() // Error transient (network/5xx dll) -- coba lagi otomatis dengan exponential backoff
         } finally {
             tempFile?.delete()
         }
@@ -148,8 +166,12 @@ class DriveUploadWorker(
 
         connection.outputStream.use { it.write(metadataJson.toString().toByteArray(Charsets.UTF_8)) }
 
-        if (connection.responseCode !in 200..299) {
-            throw IOException("Gagal membuat folder Drive (HTTP ${connection.responseCode})")
+        val responseCode = connection.responseCode
+        if (responseCode == 401 || responseCode == 403) {
+            throw DriveAuthRevokedException(responseCode)
+        }
+        if (responseCode !in 200..299) {
+            throw IOException("Gagal membuat folder Drive (HTTP $responseCode)")
         }
 
         val body = connection.inputStream.bufferedReader().use { it.readText() }
@@ -160,6 +182,9 @@ class DriveUploadWorker(
      * Upload 1 file lewat multipart/related (metadata JSON + isi file), pengganti manual
      * dari `driveService.files().create(metadata, mediaContent).execute()` milik client
      * resmi. Pakai fixed-length streaming supaya file tidak perlu di-buffer penuh ke memori.
+     */
+    /**
+     * @throws DriveAuthRevokedException kalau Drive menolak dengan 401/403 (izin tidak valid lagi).
      */
     private fun uploadFile(
         accessToken: String,
@@ -201,7 +226,11 @@ class DriveUploadWorker(
             output.write(suffix)
         }
 
-        if (connection.responseCode !in 200..299) {
+        val responseCode = connection.responseCode
+        if (responseCode == 401 || responseCode == 403) {
+            throw DriveAuthRevokedException(responseCode)
+        }
+        if (responseCode !in 200..299) {
             return null
         }
 
@@ -209,22 +238,28 @@ class DriveUploadWorker(
         return JSONObject(body).optString("id").ifBlank { null }
     }
 
+    /**
+     * @throws DriveAuthRevokedException kalau Drive menolak dengan 401/403 (izin tidak valid lagi).
+     * Untuk error lain (404, 5xx, dll) tetap return null seperti sebelumnya --
+     * caller (getOrCreateAppFolder) menganggapnya "belum ada folder" dan lanjut buat baru,
+     * yang aman karena create juga sudah dicek 401/403-nya sendiri.
+     */
     private fun httpGet(url: URL, accessToken: String): String? {
-        return try {
-            val connection = url.openConnection() as HttpURLConnection
-            connection.setRequestProperty("Authorization", "Bearer $accessToken")
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 10_000
-            connection.connect()
+        val connection = url.openConnection() as HttpURLConnection
+        connection.setRequestProperty("Authorization", "Bearer $accessToken")
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.connect()
 
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                connection.inputStream.bufferedReader().use { it.readText() }
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val responseCode = connection.responseCode
+        if (responseCode == 401 || responseCode == 403) {
+            throw DriveAuthRevokedException(responseCode)
+        }
+
+        return if (responseCode == HttpURLConnection.HTTP_OK) {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } else {
             null
         }
     }

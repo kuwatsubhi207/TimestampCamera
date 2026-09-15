@@ -13,8 +13,12 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Sama persis dengan konstanta DriveScopes.DRIVE_FILE dari google-api-services-drive,
@@ -109,7 +113,42 @@ object DriveAuth {
         }
     }
 
+    /**
+     * Mencabut token OAuth Drive yang sedang aktif lewat Google's revoke endpoint.
+     *
+     * Kenapa perlu ini: sebelumnya signOut() cuma clearCredentialState() (identitas
+     * Credential Manager), TIDAK mencabut izin Drive itu sendiri -- artinya
+     * getFreshAccessTokenSilently() masih bisa dapat token baru diam-diam setelah
+     * user "sign out" dari sisi UI. Dipanggil dari signOut() supaya "Sign out" di
+     * app benar-benar memutus akses Drive juga, bukan cuma menyembunyikan status
+     * login di UI.
+     *
+     * Aman dipanggil walau user belum pernah authorize Drive (getFreshAccessTokenSilently
+     * akan return null, langsung di-skip) atau lagi offline (exception ditelan --
+     * sign-out tidak boleh gagal cuma karena revoke gagal, user tetap bisa revoke
+     * manual lewat Google Account permissions kalau ini gagal diam-diam).
+     */
+    private suspend fun revokeDriveAccess(context: Context) {
+        val token = getFreshAccessTokenSilently(context) ?: return
+        withContext(Dispatchers.IO) {
+            try {
+                val connection = (URL("https://oauth2.googleapis.com/revoke?token=$token")
+                    .openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                }
+                connection.responseCode // trigger request; result intentionally ignored
+                connection.disconnect()
+            } catch (e: Exception) {
+                // Tidak fatal -- lihat komentar di atas fungsi ini.
+                e.printStackTrace()
+            }
+        }
+    }
+
     suspend fun signOut(context: Context) {
+        revokeDriveAccess(context)
         CredentialManager.create(context).clearCredentialState(
             ClearCredentialStateRequest()
         )
