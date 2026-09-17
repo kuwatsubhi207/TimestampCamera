@@ -18,4 +18,10 @@ object WatermarkStyle {
     const val DATE_PATTERN = "dd MMM yyyy"
     const val TIME_PATTERN = "HH:mm:ss"
     const val TIME_ZONE_LABEL = "WIB"
+
+    // ---- BARU: ukuran QR verifikasi, ditempel di pojok KANAN bawah foto (watermark ----
+    // ---- alamat/jam tetap di kiri bawah, supaya tidak tumpang tindih). Rasio dari ----
+    // ---- lebar foto, sama seperti pendekatan PADDING_RATIO -- supaya proporsional ----
+    // ---- di semua resolusi output, bukan ukuran piksel tetap.
+    const val QR_SIZE_RATIO = 0.25f
 }

@@ -15,6 +15,7 @@ import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -99,7 +101,8 @@ private fun getDisplayRotationCompat(context: android.content.Context): Int {
 fun CameraScreen(
     hasLocationPermission: Boolean,
     hasAudioPermission: Boolean,
-    onOpenGallery: () -> Unit
+    onOpenGallery: () -> Unit,
+    onOpenVerification: () -> Unit
 ) {
 
     val context = LocalContext.current
@@ -485,6 +488,20 @@ fun CameraScreen(
                 )
         )
 
+        // Preview posisi & ukuran QR verifikasi (dummy, bukan ID sungguhan) SEBELUM
+        // foto diambil -- ukuran & padding-nya mengikuti rumus yang sama persis dengan
+        // drawQrOntoBitmap() (pojok kiri atas, dari WatermarkStyle.PADDING_RATIO &
+        // QR_SIZE_RATIO), supaya user tahu kira-kira di mana QR akan muncul di hasil.
+        QrPreviewOverlay(
+            sizeDp = frameWidthDp * WatermarkStyle.QR_SIZE_RATIO,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(
+                    start = frameOffsetX + watermarkPadding,
+                    top = frameOffsetY + watermarkPadding
+                )
+        )
+
         // Tombol flash, tombol rasio, tombol mode, dan (khusus mode video) tombol
         // resolusi disusun vertikal di pojok kanan atas. Ganti rasio/mode/resolusi
         // DIKUNCI (tidak boleh) selama sedang merekam video -- karena itu akan
@@ -498,6 +515,8 @@ fun CameraScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            VerificationEntryButton(onClick = onOpenVerification)
+
             FlashButton(
                 flashMode = flashMode,
                 onToggle = {
@@ -668,6 +687,29 @@ fun CameraScreen(
     }
 }
 
+/** Tombol pintasan ke menu Verification (Scan QR / Verify Photo), pojok kanan atas. */
+@Composable
+fun VerificationEntryButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(48.dp)
+            .clickable { onClick() },
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.4f)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Filled.VerifiedUser,
+                contentDescription = "Verification",
+                tint = Color.White
+            )
+        }
+    }
+}
+
 @Composable
 fun RatioButton(
     ratioMode: RatioMode,
@@ -716,6 +758,45 @@ fun ModeButton(
                 else
                     "Ganti ke mode foto",
                 tint = Color.White
+            )
+        }
+    }
+}
+
+/**
+ * Preview QR di layar kamera, SEBELUM foto diambil -- isinya DUMMY (bukan
+ * verification_id sungguhan, yang baru dibuat saat capture lewat
+ * VerificationId.generate()), tapi ukuran & posisinya mengikuti rasio yang
+ * sama dengan drawQrOntoBitmap() supaya user tahu kira-kira di mana dan
+ * seberapa besar QR akan muncul di hasil akhir.
+ */
+@Composable
+private fun QrPreviewOverlay(
+    sizeDp: Dp,
+    modifier: Modifier = Modifier
+) {
+    val dummyContent = remember { buildVerificationUrl("TC-00000000-DUMMY0") }
+    val qrImageBitmap = remember(dummyContent) {
+        try {
+            generateQrBitmap(dummyContent, sizePx = 300).asImageBitmap()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    Surface(
+        modifier = modifier.size(sizeDp),
+        color = Color.White,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+    ) {
+        qrImageBitmap?.let { bmp ->
+            Image(
+                bitmap = bmp,
+                contentDescription = "Preview posisi QR verifikasi (dummy, bukan ID sungguhan)",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(sizeDp * 0.08f)
             )
         }
     }

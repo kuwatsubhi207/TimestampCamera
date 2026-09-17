@@ -25,7 +25,7 @@ fun capturePhotoWithLocation(
     fusedLocationClient: FusedLocationProviderClient,
     hasLocationPermission: Boolean,
     onCaptureStarted: () -> Unit,
-    // ---- BARU: dipanggil begitu bitmap+watermark selesai dibuat, SEBELUM disimpan ke galeri ----
+    // ---- Dipanggil begitu bitmap+watermark+QR selesai dibuat, SEBELUM disimpan ke galeri ----
     onPhotoReady: (Bitmap) -> Unit,
     onCaptureFinished: (Uri?) -> Unit
 ) {
@@ -79,18 +79,53 @@ fun capturePhotoWithLocation(
                             capturedAt = capturedAt
                         )
 
-                        // ---- Tampilkan preview SEKETIKA, sebelum menunggu proses simpan ke galeri ----
+                        val verificationId = VerificationId.generate()
+                        val verificationUrl = buildVerificationUrl(verificationId)
+                        val finalBitmap = drawQrOntoBitmap(watermarkedBitmap, verificationUrl)
+
+                        // ---- Tampilkan preview SEKETIKA (sudah termasuk watermark & QR), ----
+                        // ---- sebelum menunggu proses compress/simpan/upload ----
                         (context as ComponentActivity).runOnUiThread {
-                            onPhotoReady(watermarkedBitmap)
+                            onPhotoReady(finalBitmap)
                         }
 
-                        val savedUri = saveBitmapToMediaStore(context, watermarkedBitmap)
+                        // ---- Compress SATU KALI SAJA. Bytes hasil compress ini yang ----
+                        // ---- dipakai untuk DUA hal: dihitung hash-nya, dan ditulis ke ----
+                        // ---- MediaStore -- supaya keduanya PERSIS SAMA (lihat catatan ----
+                        // ---- di computeSha256(ByteArray) dan saveBytesToMediaStore()). ----
+                        val jpegBytes = compressBitmapToMaxSize(finalBitmap, maxSizeBytes = 200 * 1024)
+                        val sha256 = computeSha256(jpegBytes)
+
+                        val fileName = buildPhotoFileName(capturedAt)
+                        val savedUri = saveBytesToMediaStore(context, jpegBytes, fileName)
                         tempFile.delete()
 
-                        // ---- Antre upload ke Drive di background (foto lokal akan otomatis ----
-                        // ---- terhapus oleh DriveUploadWorker begitu upload sukses) ----
                         if (savedUri != null) {
+                            // ---- Antre upload ke Drive di background (foto lokal akan ----
+                            // ---- otomatis terhapus oleh DriveUploadWorker begitu upload ----
+                            // ---- sukses) ----
                             enqueueDriveUpload(context, savedUri)
+
+                            // ---- Antre pendaftaran hash ke Cloudflare, terpisah dari upload ----
+                            // ---- Drive -- keduanya independen, kalau salah satu gagal/telat ----
+                            // ---- tidak saling memblokir yang lain. ----
+                            HashRegisterWorker.enqueue(
+                                context = context,
+                                verificationId = verificationId,
+                                sha256 = sha256,
+                                fileName = fileName,
+                                capturedAt = formatIso8601(capturedAt)
+                            )
+
+                            (context as ComponentActivity).runOnUiThread {
+                                Toast.makeText(context, "Foto tersimpan", Toast.LENGTH_SHORT).show()
+                                onCaptureFinished(savedUri)
+                            }
+                        } else {
+                            (context as ComponentActivity).runOnUiThread {
+                                Toast.makeText(context, "Gagal menyimpan foto ke galeri", Toast.LENGTH_SHORT).show()
+                                onCaptureFinished(null)
+                            }
                         }
 
                         context.runOnUiThread {

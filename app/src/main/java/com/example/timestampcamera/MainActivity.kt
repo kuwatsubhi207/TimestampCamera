@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
 
             // ---- Navigasi ke layar galeri ----
             var showGallery by remember { mutableStateOf(false) }
+            var showVerification by remember { mutableStateOf(false) }
 
             // ---- Status Drive ----
             // Prefs cuma untuk INDIKATOR UI supaya tidak selalu menampilkan tombol
@@ -292,6 +293,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 if (showGallery) {
                     GalleryScreen(onBack = { showGallery = false })
+                } else if (showVerification) {
+                    VerificationScreen(onBack = { showVerification = false })
                 } else {
                     when {
                         hasCameraPermission -> {
@@ -301,7 +304,8 @@ class MainActivity : ComponentActivity() {
                                 CameraScreen(
                                     hasLocationPermission = hasLocationPermission,
                                     hasAudioPermission = hasAudioPermission,
-                                    onOpenGallery = { showGallery = true }
+                                    onOpenGallery = { showGallery = true },
+                                    onOpenVerification = { showVerification = true }
                                 )
 
                                 // ---- Status/tombol Drive di pojok kiri atas ----
@@ -491,29 +495,44 @@ class MainActivity : ComponentActivity() {
 
     /** Buka installer APK setelah download update selesai. */
     private fun installDownloadedApk(downloadId: Long) {
-        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val query = DownloadManager.Query().setFilterById(downloadId)
-        val cursor = downloadManager.query(query)
-        if (cursor.moveToFirst()) {
-            val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-            val localUriString = cursor.getString(localUriIndex)
-            cursor.close()
+        try {
+            val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val query = DownloadManager.Query().setFilterById(downloadId)
+            val cursor = downloadManager.query(query)
+            if (cursor.moveToFirst()) {
+                val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                val localUriString = cursor.getString(localUriIndex)
+                cursor.close()
 
-            val file = File(Uri.parse(localUriString).path ?: return)
-            val apkUri = FileProvider.getUriForFile(
-                this,
-                "$packageName.fileprovider",
-                file
-            )
+                val file = File(Uri.parse(localUriString).path ?: return)
+                val apkUri = FileProvider.getUriForFile(
+                    this,
+                    "$packageName.fileprovider",
+                    file
+                )
 
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(installIntent)
+            } else {
+                cursor.close()
+                android.util.Log.e("UpdateInstall", "Download tidak ditemukan di DownloadManager, id=$downloadId")
             }
-            startActivity(installIntent)
-        } else {
-            cursor.close()
+        } catch (e: Exception) {
+            // ---- PENTING: jangan gagal diam-diam. Kalau path FileProvider di ----
+            // ---- file_paths.xml tidak cocok dengan lokasi file APK yang     ----
+            // ---- sebenarnya, FileProvider.getUriForFile() akan throw di sini ----
+            // ---- dan tanpa log/toast ini akan terlihat seolah "tidak terjadi ----
+            // ---- apa-apa" setelah download selesai.
+            android.util.Log.e("UpdateInstall", "Gagal membuka installer APK", e)
+            Toast.makeText(
+                this,
+                "Gagal membuka installer update: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
