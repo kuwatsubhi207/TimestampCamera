@@ -83,11 +83,11 @@ fun generateQrBitmap(content: String, sizePx: Int): Bitmap {
 
 /** URL verifikasi yang ditempel ke QR -- App Link ke halaman verify.html di GitHub Pages. */
 fun buildVerificationUrl(verificationId: String): String {
-    return "https://kuwatsubhi207.github.io/verify.html?id=$verificationId"
+    return "https://verify.domain.com/verify.html?id=$verificationId"
 }
 
 /**
- * Tempel QR verifikasi ke pojok KIRI ATAS bitmap (watermark alamat/jam tetap
+ * Tempel QR verifikasi ke pojok KANAN ATAS bitmap (watermark alamat/jam tetap
  * di kiri bawah -- lihat addWatermark.kt -- supaya tidak tumpang tindih).
  *
  * Ditambahkan kotak putih polos di belakang QR (dengan sedikit padding) supaya
@@ -104,29 +104,38 @@ fun buildVerificationUrl(verificationId: String): String {
 fun drawQrOntoBitmap(bitmap: Bitmap, verificationUrl: String): Bitmap {
     val canvas = Canvas(bitmap)
     val width = bitmap.width
+    val height = bitmap.height
 
-    val qrSizePx = (width * WatermarkStyle.QR_SIZE_RATIO).toInt().coerceAtLeast(1)
-    val padding = width * WatermarkStyle.PADDING_RATIO
-    val qrBackgroundPadding = qrSizePx * 0.05f
+    // ---- QR_SIZE_RATIO = ukuran TOTAL kotak putih (bukan ukuran QR itu sendiri) ----
+    // ---- QR digambar lebih kecil DI DALAM kotak ini, dikurangi QR_INNER_PADDING_RATIO ----
+    // ---- di tiap sisi -- PERSIS logika yang sama dipakai preview (QrPreviewOverlay), ----
+    // ---- supaya kotak putih yang terlihat user sebelum capture berukuran sama persis ----
+    // ---- dengan yang muncul di hasil foto, bukan cuma "mirip".
+    val totalBoxSizePx = (width * WatermarkStyle.QR_SIZE_RATIO).toInt().coerceAtLeast(1)
+    val innerPaddingPx = totalBoxSizePx * WatermarkStyle.QR_INNER_PADDING_RATIO
+    val qrSizePx = (totalBoxSizePx - 2 * innerPaddingPx).toInt().coerceAtLeast(1)
 
-    // Pojok KIRI ATAS
-    val qrLeft = padding
-    val qrTop = padding
+    val padding = width * WatermarkStyle.QR_PADDING_RATIO
+    val boxLeft = width - padding - totalBoxSizePx
+    val boxTop = padding
 
     val backgroundPaint = Paint().apply {
         color = Color.WHITE
         isAntiAlias = true
     }
-    canvas.drawRect(
-        qrLeft - qrBackgroundPadding,
-        qrTop - qrBackgroundPadding,
-        qrLeft + qrSizePx + qrBackgroundPadding,
-        qrTop + qrSizePx + qrBackgroundPadding,
+    val cornerRadiusPx = totalBoxSizePx * WatermarkStyle.QR_CORNER_RADIUS_RATIO
+    canvas.drawRoundRect(
+        boxLeft,
+        boxTop,
+        boxLeft + totalBoxSizePx,
+        boxTop + totalBoxSizePx,
+        cornerRadiusPx,
+        cornerRadiusPx,
         backgroundPaint
     )
 
     val qrBitmap = generateQrBitmap(verificationUrl, qrSizePx)
-    canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
+    canvas.drawBitmap(qrBitmap, boxLeft + innerPaddingPx, boxTop + innerPaddingPx, null)
 
     return bitmap
 }

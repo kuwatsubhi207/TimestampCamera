@@ -490,15 +490,17 @@ fun CameraScreen(
 
         // Preview posisi & ukuran QR verifikasi (dummy, bukan ID sungguhan) SEBELUM
         // foto diambil -- ukuran & padding-nya mengikuti rumus yang sama persis dengan
-        // drawQrOntoBitmap() (pojok kiri atas, dari WatermarkStyle.PADDING_RATIO &
-        // QR_SIZE_RATIO), supaya user tahu kira-kira di mana QR akan muncul di hasil.
+        // drawQrOntoBitmap() (pojok KANAN atas, dari WatermarkStyle.QR_PADDING_RATIO &
+        // QR_SIZE_RATIO -- BUKAN PADDING_RATIO yang dipakai watermark teks), supaya
+        // user tahu persis di mana QR akan muncul di hasil.
+        val qrPreviewPadding = frameWidthDp * WatermarkStyle.QR_PADDING_RATIO
         QrPreviewOverlay(
             sizeDp = frameWidthDp * WatermarkStyle.QR_SIZE_RATIO,
             modifier = Modifier
-                .align(Alignment.TopStart)
+                .align(Alignment.TopEnd)
                 .padding(
-                    start = frameOffsetX + watermarkPadding,
-                    top = frameOffsetY + watermarkPadding
+                    end = frameOffsetX + qrPreviewPadding,
+                    top = frameOffsetY + qrPreviewPadding
                 )
         )
 
@@ -788,7 +790,7 @@ private fun QrPreviewOverlay(
     Surface(
         modifier = modifier.size(sizeDp),
         color = Color.White,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(sizeDp * WatermarkStyle.QR_CORNER_RADIUS_RATIO)
     ) {
         qrImageBitmap?.let { bmp ->
             Image(
@@ -796,7 +798,7 @@ private fun QrPreviewOverlay(
                 contentDescription = "Preview posisi QR verifikasi (dummy, bukan ID sungguhan)",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(sizeDp * 0.08f)
+                    .padding(sizeDp * WatermarkStyle.QR_INNER_PADDING_RATIO)
             )
         }
     }

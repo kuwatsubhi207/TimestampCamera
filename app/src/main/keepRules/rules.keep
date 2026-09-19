@@ -19,3 +19,38 @@
 -keep public class * extends androidx.work.ListenableWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# ---- ML Kit: HARUS cover com.google.mlkit.** secara PENUH, bukan cuma ----
+# ---- com.google.mlkit.vision.** -- MlKitInitProvider dan sistem dependency-----
+# ---- injection internalnya (ComponentRegistrar, Component, dll) ada di ----
+# ---- package com.google.mlkit.common.internal, yang KELUAR dari cakupan ----
+# ---- "vision.**" saja. Kalau cuma vision.** yang di-keep, provider ini gagal ----
+# ---- di-inject saat app startup -> RuntimeException/NPE persis saat ----
+# ---- BarcodeScanning.getClient() pertama kali dipanggil (lihat riwayat crash ----
+# ---- sebelumnya: "Unable to get provider com.google.mlkit.common.internal.MlKitInitProvider").
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**
+
+# ---- Modul internal Play Services untuk Barcode Scanning (varian unbundled/ ----
+# ---- Dynamite) -- di-load reflection saat runtime, wajib di-keep utuh. ----
+-keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_common.** { *; }
+-dontwarn com.google.android.gms.internal.mlkit_vision_barcode.**
+-dontwarn com.google.android.gms.internal.mlkit_vision_common.**
+
+# ---- Safety net: MlKitInitProvider di-bootstrap lewat sistem dependency- ----
+# ---- injection generik milik Play Services yang dipakai bersama oleh modul ----
+# ---- GMS lain di app ini (Auth, Location, dll) -- kalau class DI generiknya ----
+# ---- ikut ter-strip, provider APA PUN yang pakai mekanisme sama bisa crash ----
+# ---- serupa, bukan cuma barcode. ----
+-keep class com.google.android.gms.common.internal.** { *; }
+-dontwarn com.google.android.gms.common.internal.**
+
+# ---- ZXing: dipakai untuk GENERATE QR (PhotoIntegrity.kt). ----
+-keep class com.google.zxing.** { *; }
+-dontwarn com.google.zxing.**
+
+# ---- CameraX: ImageAnalysis + analyzer callback, sebagian wiring internalnya ----
+# ---- reflection-based dan rawan di-strip kalau full R8 mode aktif. ----
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**

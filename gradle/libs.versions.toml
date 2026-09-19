@@ -17,7 +17,7 @@ credentials = "1.6.0"
 googleid = "1.2.1"
 kotlinxCoroutinesPlayServices = "1.11.0"
 zxing = "3.5.4"
-mlkitBarcode = "17.3.0"
+mlkitBarcode = "18.3.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -49,7 +49,7 @@ kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "ko
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "camerax" }
 androidx-camera-effects = { group = "androidx.camera", name = "camera-effects", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
-mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcode" }
+mlkit-barcode-scanning = { module = "com.google.android.gms:play-services-mlkit-barcode-scanning", version.ref = "mlkitBarcode" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
